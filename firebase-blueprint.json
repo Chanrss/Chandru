@@ -1,0 +1,145 @@
+{
+  "entities": {
+    "RestaurantSettings": {
+      "title": "RestaurantSettings",
+      "description": "Global restaurant profile configuration and thermal receipt parameters",
+      "type": "object",
+      "properties": {
+        "restaurantName": {
+          "type": "string",
+          "description": "Name of the restaurant"
+        },
+        "address": {
+          "type": "string",
+          "description": "Physical address of the establishment"
+        },
+        "phone": {
+          "type": "string",
+          "description": "Contact phone number(s)"
+        },
+        "email": {
+          "type": "string",
+          "description": "Contact email address"
+        },
+        "gstNumber": {
+          "type": "string",
+          "description": "Goods and Services Tax Identification Number"
+        },
+        "fssaiNumber": {
+          "type": "string",
+          "description": "Food Safety and Standards Authority of India license number"
+        },
+        "logoUrl": {
+          "type": "string",
+          "description": "Base64 data URL or web URL of the restaurant logo for thermal receipts"
+        },
+        "logoStoragePath": {
+          "type": "string",
+          "description": "Firebase Storage path of the official immutable brand logo asset"
+        },
+        "logoStorageUrl": {
+          "type": "string",
+          "description": "Public download URL from Firebase Storage for the official logo asset"
+        },
+        "receiptHeader": {
+          "type": "string",
+          "description": "Custom header tagline on thermal receipt"
+        },
+        "receiptFooter": {
+          "type": "string",
+          "description": "Custom footer message on thermal receipt"
+        },
+        "businessDayStartHour": {
+          "type": "string",
+          "description": "Hour at which new business day cycles begin (HH:MM)"
+        },
+        "billNumberDigits": {
+          "type": "number",
+          "description": "Number of padded digits for bill sequence"
+        },
+        "paperWidth": {
+          "type": "string",
+          "description": "Thermal paper roll width (80mm or 58mm)"
+        },
+        "receiptFontSize": {
+          "type": "number",
+          "description": "Base font size in px for thermal receipt output"
+        },
+        "compactMode": {
+          "type": "boolean",
+          "description": "Toggles paper-saving compact mode with reduced font sizes and tighter line spacing"
+        },
+        "autoPrintOnSave": {
+          "type": "boolean",
+          "description": "Whether to auto-trigger thermal print on bill save"
+        },
+        "updatedAt": {
+          "type": "number",
+          "description": "Timestamp of last settings update"
+        }
+      },
+      "required": ["restaurantName"]
+    },
+    "PrintJobLog": {
+      "title": "PrintJobLog",
+      "description": "Diagnostic print job execution log and error telemetry",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "createdAt": { "type": "number" },
+        "jobType": { "type": "string" },
+        "referenceNumber": { "type": "string" },
+        "status": { "type": "string" },
+        "method": { "type": "string" },
+        "paperWidth": { "type": "string" },
+        "fontSize": { "type": "number" },
+        "itemCount": { "type": "number" },
+        "totalAmount": { "type": "number" },
+        "durationMs": { "type": "number" },
+        "errorMessage": { "type": "string" },
+        "isMockMode": { "type": "boolean" },
+        "userAgent": { "type": "string" },
+        "isIframe": { "type": "boolean" }
+      },
+      "required": ["id", "timestamp", "createdAt", "jobType", "referenceNumber", "status", "method"]
+    },
+    "DailyBackupRecord": {
+      "title": "DailyBackupRecord",
+      "description": "Historical audit log of automated and manual core billing data backups",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "businessDate": { "type": "string" },
+        "timestamp": { "type": "number" },
+        "exportedAt": { "type": "string" },
+        "filename": { "type": "string" },
+        "triggerType": { "type": "string" },
+        "status": { "type": "string" },
+        "scope": { "type": "string" },
+        "billCount": { "type": "number" },
+        "totalRevenue": { "type": "number" },
+        "cashTotal": { "type": "number" },
+        "upiTotal": { "type": "number" },
+        "kotCount": { "type": "number" },
+        "totalDocuments": { "type": "number" },
+        "fileSizeBytes": { "type": "number" }
+      },
+      "required": ["id", "businessDate", "timestamp", "filename", "status", "scope"]
+    }
+  },
+  "firestore": {
+    "/settings/{settingId}": {
+      "schema": "RestaurantSettings",
+      "description": "Global settings and configuration documents"
+    },
+    "/print_logs/{logId}": {
+      "schema": "PrintJobLog",
+      "description": "Diagnostic telemetry logs for POS thermal print jobs"
+    },
+    "/daily_backups/{backupId}": {
+      "schema": "DailyBackupRecord",
+      "description": "Historical record of automated daily and manual billing database backups"
+    }
+  }
+}

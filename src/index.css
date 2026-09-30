@@ -1,0 +1,475 @@
+@import "tailwindcss";
+
+/* HTML & Body root responsive and smooth touch scrolling */
+html, body {
+  height: 100%;
+  min-height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  overflow-x: hidden;
+}
+
+#root {
+  min-height: 100%;
+  height: 100%;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow-x: hidden;
+}
+
+/* Touch friendly interaction improvements */
+button, input, select, textarea {
+  touch-action: manipulation;
+}
+
+/* Custom scrollbars for high-density POS terminals */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.4);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 116, 139, 0.6);
+}
+
+/* 1. Default (Screen): Ensure #pos-print-root is strictly hidden during standard application view */
+#pos-print-root {
+  display: none !important;
+}
+
+/* Explicitly set body overflow to hidden and apply a fixed z-index context when print-ready is active
+   to prevent browser document height calculation and avoid kiosk window minimization */
+body.print-ready,
+body.pos-printing {
+  overflow: hidden !important;
+  position: relative !important;
+  z-index: 1 !important;
+}
+
+@media print {
+  /* Set body overflow to hidden and establish a fixed z-index context when print-ready is active */
+  body.print-ready,
+  body.pos-printing {
+    overflow: hidden !important;
+    position: relative !important;
+    z-index: 1 !important;
+  }
+
+  body {
+    overflow: hidden !important;
+    position: relative !important;
+    z-index: 1 !important;
+    background-color: white !important;
+    color: black !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Hide standard web application UI, modals, buttons, and navigation during print */
+  body.pos-printing #root,
+  body.print-ready #root,
+  body:has(#pos-print-root:not(:empty)) > #root,
+  header, 
+  aside, 
+  button, 
+  nav, 
+  .no-print {
+    display: none !important;
+  }
+  
+  /* Dedicated POS Thermal Print Root Container - Visible ONLY when body is print-ready / pos-printing */
+  body.print-ready #pos-print-root,
+  body.pos-printing #pos-print-root,
+  body #pos-print-root[data-print-ready="true"],
+  body:has(#pos-print-root:not(:empty)) #pos-print-root {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: white !important;
+    color: black !important;
+    z-index: 999999 !important;
+  }
+
+  @page {
+    margin: 0;
+    size: auto;
+  }
+
+  /* Thermal Receipt Specific Styling inside print root */
+  #pos-print-root {
+    --receipt-base-font-size: 12px;
+    --receipt-title-font-size: calc(var(--receipt-base-font-size) * 1.25);
+    --receipt-header-font-size: calc(var(--receipt-base-font-size) * 0.88);
+    --receipt-meta-font-size: calc(var(--receipt-base-font-size) * 0.85);
+    --receipt-item-font-size: var(--receipt-base-font-size);
+    --receipt-total-font-size: calc(var(--receipt-base-font-size) * 1.25);
+    --receipt-small-font-size: calc(var(--receipt-base-font-size) * 0.75);
+    --receipt-logo-max-width: 90px;
+    --receipt-logo-max-height: 90px;
+    font-size: var(--receipt-base-font-size, 12px) !important;
+  }
+
+  .receipt-wrapper {
+    position: relative;
+    width: 100%;
+    margin: 0 auto;
+    background: #fff;
+    color: #000;
+    font-family: 'Mukta Malar', 'Noto Sans Tamil', 'Courier New', Courier, monospace;
+    font-size: var(--receipt-base-font-size, 12px);
+    line-height: 1.3;
+  }
+
+  .watermark,
+  .watermark-container {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    opacity: 0.16 !important;
+    pointer-events: none;
+    z-index: 0;
+    filter: drop-shadow(0px 0px 8px rgba(0, 0, 0, 0.35)) !important;
+    -webkit-filter: drop-shadow(0px 0px 8px rgba(0, 0, 0, 0.35)) !important;
+  }
+
+  .content {
+    position: relative;
+    z-index: 1;
+  }
+
+  .center { text-align: center; }
+  .bold { font-weight: bold; }
+  .header { text-align: center; margin-bottom: 6px; }
+  
+  /* Centralized Bulletproof Receipt Logo Centering & Scaling */
+  .receipt-logo-container {
+    display: block !important;
+    width: 100% !important;
+    text-align: center !important;
+    margin: 0 auto var(--receipt-logo-margin-bottom, 5px) auto !important;
+    padding: 0 !important;
+    position: relative !important;
+    overflow: hidden !important;
+  }
+  .receipt-logo {
+    display: block !important;
+    margin-left: auto !important;
+    margin-right: auto !important;
+    max-width: var(--receipt-logo-max-width, 85px) !important;
+    max-height: var(--receipt-logo-max-height, 85px) !important;
+    width: auto !important;
+    height: auto !important;
+    object-fit: contain !important;
+    filter: grayscale(100%) contrast(135%) !important;
+    -webkit-filter: grayscale(100%) contrast(135%) !important;
+    image-rendering: -webkit-optimize-contrast;
+  }
+
+  .receipt-logo-container.align-left {
+    text-align: left !important;
+  }
+  .receipt-logo-container.align-left .receipt-logo {
+    margin-left: 0 !important;
+    margin-right: auto !important;
+  }
+  .receipt-logo-container.align-right {
+    text-align: right !important;
+  }
+  .receipt-logo-container.align-right .receipt-logo {
+    margin-left: auto !important;
+    margin-right: 0 !important;
+  }
+
+  /* ========================================================================= */
+  /* OPTIONAL MONOCHROME / BLACK-AND-WHITE LOGO OVERRIDE FOR THERMAL PRINTERS */
+  /* Specialized 1-bit or pre-dithered B&W logos provided in restaurant settings */
+  /* bypass standard synthetic grayscale filtering for crisp pixel-perfect print. */
+  /* ========================================================================= */
+  .receipt-logo.monochrome-override,
+  .receipt-logo[data-monochrome="true"],
+  .receipt-logo-monochrome,
+  .has-monochrome-logo .receipt-logo-monochrome,
+  [data-has-monochrome-logo="true"] .receipt-logo-monochrome,
+  .receipt-logo-container.has-monochrome .receipt-logo-monochrome {
+    display: block !important;
+    filter: none !important;
+    -webkit-filter: none !important;
+    image-rendering: -webkit-optimize-contrast;
+    image-rendering: crisp-edges;
+    image-rendering: pixelated;
+  }
+
+  /* When monochrome logo override is active, suppress the standard/color version */
+  .has-monochrome-logo .receipt-logo-standard,
+  .has-monochrome-logo .receipt-logo:not(.monochrome-override):not(.receipt-logo-monochrome):not([data-monochrome="true"]),
+  [data-has-monochrome-logo="true"] .receipt-logo-standard,
+  [data-has-monochrome-logo="true"] .receipt-logo:not(.monochrome-override):not(.receipt-logo-monochrome):not([data-monochrome="true"]),
+  .receipt-logo-container.has-monochrome .receipt-logo-standard,
+  .receipt-logo-container.has-monochrome .receipt-logo:not(.receipt-logo-monochrome):not(.monochrome-override) {
+    display: none !important;
+  }
+
+  /* Default state: hide monochrome logo container if no monochrome override is provided */
+  :not(.has-monochrome-logo):not([data-has-monochrome-logo="true"]) > .receipt-logo-monochrome:not(.monochrome-override):not([data-monochrome="true"]) {
+    display: none;
+  }
+  .restaurant-title { 
+    font-size: var(--receipt-title-font-size, 15px);
+    font-weight: 900; 
+    margin-bottom: 2px; 
+    letter-spacing: 0.5px;
+    text-transform: uppercase; 
+  }
+  .header-slogan {
+    font-size: var(--receipt-header-font-size, 10.5px);
+    font-weight: 600;
+    margin-bottom: 3px;
+    font-style: italic;
+  }
+  .contact-info {
+    font-size: var(--receipt-meta-font-size, 10px);
+    line-height: 1.35;
+    color: #222;
+  }
+  .tax-info {
+    font-size: var(--receipt-meta-font-size, 9.5px);
+    margin-top: 2px;
+    font-weight: 600;
+  }
+  .divider-solid { border-top: 1.5px solid #000; margin: 4px 0; }
+  .divider-double { border-top: 3px double #000; margin: 4px 0; }
+  .divider-dashed { border-top: 1px dashed #000; margin: 4px 0; }
+  .meta-table, .items-table, .totals-table { 
+    width: 100%; 
+    border-collapse: collapse; 
+    font-size: var(--receipt-base-font-size, 12px); 
+  }
+  .meta-table td { 
+    padding: 1.5px 0; 
+    vertical-align: top; 
+    font-size: var(--receipt-meta-font-size, 10.5px); 
+  }
+  .items-table th { 
+    border-top: 1px dashed #000;
+    border-bottom: 1px dashed #000; 
+    padding: 3px 0; 
+    text-align: left; 
+    font-weight: 800;
+    font-size: var(--receipt-meta-font-size, 10.5px);
+  }
+  .totals-table td { padding: 1.5px 0; }
+  .grand-total-row { 
+    font-size: var(--receipt-total-font-size, 15px);
+    font-weight: 900; 
+  }
+  .summary-qty {
+    font-size: var(--receipt-small-font-size, 9.5px);
+    color: #333;
+    padding-bottom: 3px;
+  }
+  .footer { 
+    text-align: center; 
+    margin-top: 8px; 
+    font-size: var(--receipt-meta-font-size, 10.5px);
+    line-height: 1.35;
+  }
+  .footer-note {
+    font-weight: 700;
+    margin-bottom: 2px;
+  }
+
+  /* Compact Mode: reduces line spacing, margins, and font sizes to save paper roll */
+  #pos-print-root.compact-mode,
+  #pos-print-root.receipt-compact,
+  #pos-print-root[data-compact-mode="true"],
+  .receipt-wrapper.compact-mode,
+  .receipt-wrapper.receipt-compact,
+  .receipt-wrapper[data-compact-mode="true"] {
+    --receipt-base-font-size: 10px;
+    --receipt-title-font-size: calc(var(--receipt-base-font-size) * 1.15);
+    --receipt-header-font-size: calc(var(--receipt-base-font-size) * 0.82);
+    --receipt-meta-font-size: calc(var(--receipt-base-font-size) * 0.82);
+    --receipt-item-font-size: var(--receipt-base-font-size);
+    --receipt-total-font-size: calc(var(--receipt-base-font-size) * 1.15);
+    --receipt-small-font-size: calc(var(--receipt-base-font-size) * 0.70);
+    line-height: 1.12 !important;
+  }
+
+  .compact-mode .header,
+  .receipt-compact .header {
+    margin-bottom: 2px !important;
+  }
+  .compact-mode .receipt-logo-container,
+  .receipt-compact .receipt-logo-container {
+    margin-bottom: 2px !important;
+  }
+  .compact-mode .receipt-logo,
+  .receipt-compact .receipt-logo {
+    max-height: 34px !important;
+  }
+  .compact-mode .restaurant-title,
+  .receipt-compact .restaurant-title {
+    margin-bottom: 1px !important;
+    line-height: 1.1 !important;
+  }
+  .compact-mode .restaurant-address,
+  .compact-mode .address-section,
+  .receipt-compact .restaurant-address,
+  .receipt-compact .address-section {
+    margin-bottom: 1px !important;
+    line-height: 1.12 !important;
+  }
+  .compact-mode .bill-title,
+  .receipt-compact .bill-title {
+    margin: 3px 0 2px 0 !important;
+  }
+  .compact-mode .meta-section,
+  .compact-mode .meta-block,
+  .receipt-compact .meta-section,
+  .receipt-compact .meta-block {
+    margin-bottom: 2px !important;
+    line-height: 1.15 !important;
+  }
+  .compact-mode .meta-row,
+  .receipt-compact .meta-row {
+    margin-bottom: 0.5px !important;
+  }
+  .compact-mode .items-table th,
+  .receipt-compact .items-table th {
+    padding: 1.5px 0 !important;
+  }
+  .compact-mode .items-table td,
+  .receipt-compact .items-table td {
+    padding: 1px 0 !important;
+    line-height: 1.1 !important;
+  }
+  .compact-mode .net-summary,
+  .receipt-compact .net-summary {
+    padding-top: 1.5px !important;
+    margin-top: 1px !important;
+  }
+  .compact-mode .summary-line,
+  .receipt-compact .summary-line {
+    margin-bottom: 0.5px !important;
+  }
+  .compact-mode .grand-total-section,
+  .receipt-compact .grand-total-section {
+    margin-top: 2px !important;
+    padding-top: 2px !important;
+  }
+  .compact-mode .footer,
+  .compact-mode .footer-text,
+  .receipt-compact .footer,
+  .receipt-compact .footer-text {
+    margin-top: 2px !important;
+    line-height: 1.12 !important;
+  }
+  .compact-mode .divider-solid,
+  .compact-mode .divider-double,
+  .compact-mode .divider-dashed,
+  .compact-mode .dashed-divider,
+  .compact-mode .solid-divider,
+  .receipt-compact .divider-solid,
+  .receipt-compact .divider-double,
+  .receipt-compact .divider-dashed,
+  .receipt-compact .dashed-divider,
+  .receipt-compact .solid-divider {
+    margin: 2px 0 !important;
+  }
+}
+
+/* ========================================================================= */
+/* THERMAL RECEIPT LOGO UTILITIES (Screen Preview Modals & Print Simulators) */
+/* ========================================================================= */
+.receipt-logo-container {
+  display: block;
+  width: 100%;
+  text-align: center;
+  margin-left: auto;
+  margin-right: auto;
+  margin-bottom: var(--receipt-logo-margin-bottom, 5px);
+  position: relative;
+}
+
+.receipt-logo {
+  display: block;
+  margin-left: auto;
+  margin-right: auto;
+  max-width: var(--receipt-logo-max-width, 85px);
+  max-height: var(--receipt-logo-max-height, 85px);
+  width: auto;
+  height: auto;
+  object-fit: contain;
+}
+
+.receipt-logo.monochrome-override,
+.receipt-logo[data-monochrome="true"],
+.receipt-logo-monochrome,
+.has-monochrome-logo .receipt-logo-monochrome,
+[data-has-monochrome-logo="true"] .receipt-logo-monochrome,
+.receipt-logo-container.has-monochrome .receipt-logo-monochrome {
+  display: block;
+  filter: none !important;
+  -webkit-filter: none !important;
+  image-rendering: -webkit-optimize-contrast;
+  image-rendering: crisp-edges;
+  image-rendering: pixelated;
+}
+
+.has-monochrome-logo .receipt-logo-standard,
+.has-monochrome-logo .receipt-logo:not(.monochrome-override):not(.receipt-logo-monochrome):not([data-monochrome="true"]),
+[data-has-monochrome-logo="true"] .receipt-logo-standard,
+[data-has-monochrome-logo="true"] .receipt-logo:not(.monochrome-override):not(.receipt-logo-monochrome):not([data-monochrome="true"]),
+.receipt-logo-container.has-monochrome .receipt-logo-standard,
+.receipt-logo-container.has-monochrome .receipt-logo:not(.receipt-logo-monochrome):not(.monochrome-override) {
+  display: none !important;
+}
+
+:not(.has-monochrome-logo):not([data-has-monochrome-logo="true"]) > .receipt-logo-monochrome:not(.monochrome-override):not([data-monochrome="true"]) {
+  display: none;
+}
+
+/* Responsive KOT Display Grid for Mobile Devices & Kitchen Displays */
+.kot-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
+  gap: 0.875rem;
+  align-content: start;
+}
+
+@media (min-width: 640px) {
+  .kot-card-grid {
+    grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+    gap: 1rem;
+  }
+}
+
+@media (min-width: 1440px) {
+  .kot-card-grid {
+    grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
+    gap: 1.125rem;
+  }
+}
+
+@media (min-width: 1920px) {
+  .kot-card-grid {
+    grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+    gap: 1.25rem;
+  }
+}
+

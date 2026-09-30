@@ -1,0 +1,107 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Restaurant POS collections - accessible for point-of-sale terminals, counter billing, and authenticated staff
+    match /settings/{settingId} {
+      allow read, write: if true;
+    }
+
+    match /categories/{categoryId} {
+      allow read, write: if true;
+    }
+
+    match /menu_items/{itemId} {
+      allow read, write: if true;
+    }
+
+    match /kots/{kotId} {
+      allow read, write: if true;
+    }
+
+    match /kot_items/{itemId} {
+      allow read, write: if true;
+    }
+
+    match /bills/{billId} {
+      allow read, create, update: if true;
+      allow delete: if false; // Bills are never deleted
+    }
+
+    match /billing_drafts/{draftId} {
+      allow read, write: if true;
+    }
+
+    match /bill_items/{itemId} {
+      allow read, create: if true;
+      allow update, delete: if false; // Historical bill items are immutable
+    }
+
+    match /business_days/{dayId} {
+      allow read, write: if true;
+    }
+
+    match /bill_counters/{counterId} {
+      allow read, write: if true;
+    }
+
+    match /inventory_items/{itemId} {
+      allow read, write: if true;
+    }
+
+    match /inventory_movements/{movementId} {
+      allow read, write: if true;
+    }
+
+    match /purchases/{purchaseId} {
+      allow read, write: if true;
+    }
+
+    match /purchase_items/{itemId} {
+      allow read, write: if true;
+    }
+
+    match /stock_adjustments/{adjId} {
+      allow read, write: if true;
+    }
+
+    match /wastage/{wastageId} {
+      allow read, write: if true;
+    }
+
+    match /users/{userId} {
+      allow read, write: if true;
+    }
+    
+    match /roles/{roleId} {
+      allow read, write: if true;
+    }
+
+    match /permissions/{permissionId} {
+      allow read, write: if true;
+    }
+
+    match /audit_logs/{logId} {
+      allow read, create: if true;
+      allow update, delete: if false; // Logs cannot be modified
+    }
+
+    match /print_logs/{logId} {
+      allow read, create, update, delete: if true;
+    }
+
+    match /sync_metadata/{metaId} {
+      allow read, write: if true;
+    }
+
+    match /daily_backups/{backupId} {
+      allow read, write: if true;
+    }
+  }
+}
+
