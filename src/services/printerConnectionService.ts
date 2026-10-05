@@ -241,6 +241,28 @@ export class PrinterConnectionService {
         this.notifyHardwareChange();
       });
     }
+
+    // Auto-restore previously authorized hardware devices on startup (0-dialog instant access)
+    try {
+      if ('usb' in navigator && (navigator as any).usb?.getDevices) {
+        (navigator as any).usb.getDevices().then((devices: any[]) => {
+          if (devices && devices.length > 0 && !this.activeUsbDevice) {
+            this.activeUsbDevice = devices[0];
+            console.log('[PrinterConnection] Restored authorized USB device:', this.activeUsbDevice?.productName);
+            this.notifyHardwareChange();
+          }
+        }).catch(() => {});
+      }
+      if ('serial' in navigator && (navigator as any).serial?.getPorts) {
+        (navigator as any).serial.getPorts().then((ports: any[]) => {
+          if (ports && ports.length > 0 && !this.activeSerialPort) {
+            this.activeSerialPort = ports[0];
+            console.log('[PrinterConnection] Restored authorized Serial port');
+            this.notifyHardwareChange();
+          }
+        }).catch(() => {});
+      }
+    } catch (_) {}
   }
 
   /**
@@ -339,12 +361,16 @@ export class PrinterConnectionService {
 
   /**
    * Checks if a direct hardware link (WebUSB or WebSerial) is currently active and ready
-   * to send raw ESC/POS bytes without opening the Chrome print dialog.
+   * in memory to send raw ESC/POS bytes without opening the Chrome print dialog.
    */
   static isDirectHardwareReady(): boolean {
-    if (this.activeUsbDevice || this.activeSerialPort) return true;
-    const curr = this.getConnectedPrinter();
-    return curr.connected && (curr.interfaceType === 'WEB_USB' || curr.interfaceType === 'WEB_SERIAL');
+    if (this.activeSerialPort && (this.activeSerialPort.readable || this.activeSerialPort.writable)) {
+      return true;
+    }
+    if (this.activeUsbDevice && this.activeUsbDevice.opened && this.activeUsbDevice.configuration) {
+      return true;
+    }
+    return false;
   }
 
   /**
@@ -372,14 +398,35 @@ export class PrinterConnectionService {
 
         if (port) {
           const baudRate = this.getStoredBaudRate();
-          if (!port.readable || !port.writable) {
-            await port.open({
-              baudRate,
-              dataBits: 8,
-              stopBits: 1,
-              parity: 'none',
-              bufferSize: 4096
-            });
+          try {
+            if (!port.readable || !port.writable) {
+              await port.open({
+                baudRate,
+                dataBits: 8,
+                stopBits: 1,
+                parity: 'none',
+                bufferSize: 4096
+              });
+            }
+          } catch (openErr: any) {
+            // If port was already opened by a previous operation, continue cleanly
+            if (!openErr?.message?.includes('already open') && openErr?.name !== 'InvalidStateError') {
+              throw openErr;
+            }
+          }
+
+          if (!port.writable) {
+            throw new Error('Web Serial port is not writable');
+          }
+
+          // If another writer locked the stream, allow a brief pause for lock release
+          let lockWaitAttempts = 0;
+          while (port.writable.locked && lockWaitAttempts < 6) {
+            await new Promise((resolve) => setTimeout(resolve, 50));
+            lockWaitAttempts++;
+          }
+          if (port.writable.locked) {
+            throw new Error('Web Serial port stream is currently locked by another print operation.');
           }
 
           const writer = port.writable.getWriter();
@@ -392,7 +439,9 @@ export class PrinterConnectionService {
             }
             return { success: true, channel: 'WEB_SERIAL', bytesWritten: buffer.length };
           } finally {
-            writer.releaseLock();
+            try {
+              writer.releaseLock();
+            } catch (_) {}
           }
         }
       } catch (serialErr: any) {
@@ -439,7 +488,11 @@ export class PrinterConnectionService {
           }
 
           // Try to claim interface
-          await device.claimInterface(ifaceNumber);
+          try {
+            await device.claimInterface(ifaceNumber);
+          } catch (claimErr: any) {
+            console.warn('[PrinterConnection] WebUSB claim interface notice:', claimErr);
+          }
 
           // Write in 512-byte chunks
           const CHUNK_SIZE = 512;
@@ -558,7 +611,7 @@ export class PrinterConnectionService {
    * Connects via WebUSB API.
    * Prompts user with Chrome's native USB device picker.
    */
-  static async connectUsb(): Promise<{ success: boolean; deviceName?: string; error?: string }> {
+  static async connectUsb(): Promise<{ success: boolean; deviceName?: string; error?: string; isSpoolerFallback?: boolean }> {
     this.initializeListeners();
     const { hasWebUsb } = this.getCapabilities();
 
@@ -605,19 +658,22 @@ export class PrinterConnectionService {
       }
 
       // Attempt claiming interface
+      let interfaceClaimed = false;
       try {
         await device.claimInterface(ifaceNum);
+        interfaceClaimed = true;
       } catch (claimErr: any) {
-        console.warn('[PrinterConnection] WebUSB claim interface notice:', claimErr);
-        // On Windows, usbprint.sys often prevents raw claimInterface
-        // We still save the device, but warn the user with clear instructions
+        console.warn('[PrinterConnection] WebUSB claim interface notice (managed by OS driver):', claimErr);
+        // On Windows, usbprint.sys manages the interface. We gracefully assign to OS print spooler.
+        this.activeUsbDevice = null;
       }
 
-      const deviceName = device.productName || device.manufacturerName || `Rugtek RP326 USB (VID: 0x${device.vendorId.toString(16)})`;
+      const rawDeviceName = device.productName || device.manufacturerName || `Thermal USB Printer (VID: 0x${device.vendorId.toString(16)})`;
+      const deviceName = interfaceClaimed ? rawDeviceName : `${rawDeviceName} (Windows USB Spooler)`;
 
       const info: ConnectedPrinterInfo = {
         connected: true,
-        interfaceType: 'WEB_USB',
+        interfaceType: interfaceClaimed ? 'WEB_USB' : 'SYSTEM_SPOOLER',
         deviceName,
         vendorId: device.vendorId ? `0x${device.vendorId.toString(16).padStart(4, '0')}` : undefined,
         productId: device.productId ? `0x${device.productId.toString(16).padStart(4, '0')}` : undefined,
@@ -629,7 +685,11 @@ export class PrinterConnectionService {
       };
 
       this.saveConnectedPrinter(info);
-      return { success: true, deviceName };
+      return { 
+        success: true, 
+        deviceName,
+        isSpoolerFallback: !interfaceClaimed
+      };
     } catch (err: any) {
       if (err.name === 'NotFoundError') {
         return { success: false, error: 'USB pairing cancelled (no device selected).' };

@@ -313,6 +313,13 @@ export const PrintingReceiptAnimation: React.FC<PrintingReceiptAnimationProps> =
   }
 
   // Mode 2: Global Floating Toast Notification Animation (For Direct Billing & Table Order Printing)
+  // When skipPrintPreview is true (default), completely suppress this floating receipt preview widget
+  // so the cashier experiences 100% direct silent printing without any preview overlay!
+  const shouldSkipPreview = currentSettings?.skipPrintPreview !== false;
+  if (shouldSkipPreview) {
+    return null;
+  }
+
   return (
     <AnimatePresence>
       <motion.div

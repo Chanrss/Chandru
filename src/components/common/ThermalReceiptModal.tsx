@@ -40,6 +40,7 @@ export const ThermalReceiptModal: React.FC<ThermalReceiptModalProps> = ({
   const [copied, setCopied] = useState(false);
   const [isPrintingLocal, setIsPrintingLocal] = useState(false);
   const [showTroubleshoot, setShowTroubleshoot] = useState(false);
+  const [printFeedback, setPrintFeedback] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
   const [connectedPrinter, setConnectedPrinter] = useState<ConnectedPrinterInfo>(() =>
     PrinterConnectionService.getConnectedPrinter()
   );
@@ -103,6 +104,7 @@ export const ThermalReceiptModal: React.FC<ThermalReceiptModalProps> = ({
   const handlePrint = useCallback(async () => {
     if (!bill) return;
     setIsPrintingLocal(true);
+    setPrintFeedback(null);
     try {
       // Ensure #pos-print-root has the current CSS variables
       PrinterService.setPrintRootLogoSize(logoMaxWidth, logoMaxHeight);
@@ -116,17 +118,65 @@ export const ThermalReceiptModal: React.FC<ThermalReceiptModalProps> = ({
 
       if (onPrint) {
         await onPrint();
+        setPrintFeedback({ type: 'success', message: 'Print job dispatched to printer!' });
       } else {
-        PrinterService.printBill(bill, items, effectiveSettings, true);
+        const res = PrinterService.printBill(bill, items, effectiveSettings, true);
+        if (res && res.restrictedInIframe) {
+          setPrintFeedback({
+            type: 'info',
+            message: 'Browser sandbox restricted direct printing. Please open in a new standalone tab for physical USB / Serial hardware.'
+          });
+        } else if (res && !res.success) {
+          setPrintFeedback({
+            type: 'error',
+            message: res.error || 'Failed to dispatch print job. Check printer power & connection.'
+          });
+        } else {
+          setPrintFeedback({
+            type: 'success',
+            message: 'Receipt sent to printer! Paper should roll out now.'
+          });
+        }
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Print trigger error:', err);
+      setPrintFeedback({ type: 'error', message: err?.message || 'Print error encountered.' });
     } finally {
       setTimeout(() => {
         setIsPrintingLocal(false);
       }, 2600);
     }
   }, [bill, items, settings, logoMaxWidth, logoMaxHeight, activeLogoDisplay, onPrint]);
+
+  const handlePrintStandaloneWindow = useCallback(() => {
+    if (!bill) return;
+    try {
+      const effectiveSettings: RestaurantSettings = {
+        ...settings,
+        receiptLogoMaxWidth: logoMaxWidth,
+        receiptLogoMaxHeight: logoMaxHeight,
+        logoDisplay: activeLogoDisplay
+      };
+      const html = PrinterService.generateThermalReceiptHTML(bill, items, effectiveSettings);
+      const popupRes = PrinterService.printViaPopup(html);
+      if (!popupRes.success && popupRes.popupBlocked) {
+        setPrintFeedback({
+          type: 'error',
+          message: 'Popup window blocked by browser. Please allow popups or use standard Print Receipt.'
+        });
+      } else {
+        setPrintFeedback({
+          type: 'success',
+          message: 'Dedicated print window opened! Check popup window.'
+        });
+      }
+    } catch (e: any) {
+      setPrintFeedback({
+        type: 'error',
+        message: e?.message || 'Failed to open print window.'
+      });
+    }
+  }, [bill, items, settings, logoMaxWidth, logoMaxHeight, activeLogoDisplay]);
 
   useEffect(() => {
     if (!isOpen || !bill) return;
@@ -305,9 +355,9 @@ export const ThermalReceiptModal: React.FC<ThermalReceiptModalProps> = ({
         {/* Hardware printer status bar */}
         <div className="px-3.5 py-1.5 border-b text-xs flex items-center justify-between gap-2 shrink-0 bg-emerald-50/80 border-emerald-200 text-emerald-900">
           <div className="flex items-center gap-2 flex-1 truncate">
-            <span className="w-2 h-2 rounded-full shrink-0 bg-emerald-500 shadow-[0_0_5px_rgba(16,185,129,0.8)]" />
+            <span className={`w-2 h-2 rounded-full shrink-0 ${connectedPrinter.connected ? 'bg-emerald-500 shadow-[0_0_5px_rgba(16,185,129,0.8)]' : 'bg-slate-400'}`} />
             <span className="text-[11px] truncate">
-              Printer: <strong>Thermal Receipt Printer</strong> (USB / System)
+              Printer: <strong>{connectedPrinter.deviceName || settings?.printerModelName || 'Thermal Receipt Printer'}</strong> ({connectedPrinter.interfaceType === 'WEB_SERIAL' ? 'Web Serial' : connectedPrinter.interfaceType === 'WEB_USB' ? 'WebUSB' : 'USB / OS Spooler'})
             </span>
           </div>
           <button
@@ -319,24 +369,55 @@ export const ThermalReceiptModal: React.FC<ThermalReceiptModalProps> = ({
           </button>
         </div>
 
+        {/* Live print feedback alert if available */}
+        {printFeedback && (
+          <div className={`px-4 py-2 text-xs flex items-center justify-between gap-2 border-b shrink-0 ${
+            printFeedback.type === 'success' 
+              ? 'bg-emerald-100/90 text-emerald-900 border-emerald-300' 
+              : printFeedback.type === 'error'
+              ? 'bg-rose-100/90 text-rose-900 border-rose-300'
+              : 'bg-amber-100/90 text-amber-900 border-amber-300'
+          }`}>
+            <span className="font-semibold text-[11.5px]">{printFeedback.message}</span>
+            <button 
+              type="button" 
+              onClick={() => setPrintFeedback(null)} 
+              className="text-xs px-1 font-bold text-slate-500 hover:text-slate-900"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
         {/* Notice banner for sandbox preview */}
         {typeof window !== 'undefined' && window.self !== window.top && (
-          <div className="bg-amber-50 border-b border-amber-200 px-3.5 py-2 text-amber-900 text-xs flex items-center justify-between gap-2 shrink-0">
-            <div className="flex items-center gap-1.5 flex-1">
+          <div className="bg-amber-50 border-b border-amber-200 px-3.5 py-2 text-amber-900 text-xs flex flex-wrap items-center justify-between gap-2 shrink-0">
+            <div className="flex items-center gap-1.5 flex-1 min-w-[200px]">
               <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
               <span className="text-[11.5px] leading-tight">
-                <strong>Printer Connected?</strong> Browser sandbox may restrict physical print dialogs inside this preview.
+                <strong>Printer Connected?</strong> Physical thermal printing works directly below. If this browser preview frame blocks print, use dedicated print window.
               </span>
             </div>
-            <a
-              href={window.location.href}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-bold text-[11px] flex items-center gap-1 shadow-2xs transition-colors shrink-0"
-            >
-              <ExternalLink className="w-3 h-3" />
-              <span>Open in New Tab</span>
-            </a>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                type="button"
+                onClick={handlePrintStandaloneWindow}
+                className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-bold text-[11px] flex items-center gap-1 shadow-2xs transition-colors cursor-pointer"
+                title="Open this receipt in a clean printable window"
+              >
+                <Printer className="w-3 h-3" />
+                <span>Dedicated Print Window</span>
+              </button>
+              <a
+                href={window.location.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-2 py-1 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-lg font-bold text-[11px] flex items-center gap-1 transition-colors shrink-0"
+              >
+                <ExternalLink className="w-3 h-3" />
+                <span>Open App in Tab</span>
+              </a>
+            </div>
           </div>
         )}
 

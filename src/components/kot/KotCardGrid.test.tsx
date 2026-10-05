@@ -146,8 +146,8 @@ describe('Responsive KOT Card Display and Grid Layout', () => {
     expect(screen.getByText('T-12')).toBeDefined();
     // Dish Name
     expect(screen.getAllByText(/Poori Masala/).length).toBeGreaterThanOrEqual(1);
-    // Tamil translation
-    expect(screen.getByText('பூரி மசாலா')).toBeDefined();
+    // Tamil translation is kept on receipts, not cluttering KOT screens
+    expect(screen.queryByText('பூரி மசாலா')).toBeNull();
     // Special cooking instruction note
     expect(screen.getByText('Less oil')).toBeDefined();
     // High-visibility quantity badge

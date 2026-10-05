@@ -1122,6 +1122,16 @@ export const DirectBilling: React.FC<DirectBillingProps> = ({ settings }) => {
       setSavedBill(prepared.bill);
       setSavedBillItems(prepared.items);
       setLastPrintedBill({ bill: prepared.bill, items: prepared.items });
+      
+      const isSandboxed = PrinterService.isSandboxed();
+      const skipPreview = localStorage.getItem('pos_fast_rush_mode') === 'true' || Boolean(settings?.skipPrintPreview);
+
+      // If in sandbox or if preview is not explicitly skipped, show receipt modal so user has instant visual receipt & print trigger
+      if (isSandboxed || !skipPreview) {
+        setIsReceiptModalOpen(true);
+      } else {
+        setIsReceiptModalOpen(false);
+      }
 
       // If linked to KOT, immediately free the table in local store
       if (kotIdToLink) {
@@ -1625,11 +1635,6 @@ export const DirectBilling: React.FC<DirectBillingProps> = ({ settings }) => {
                       <span className="text-xs sm:text-sm font-bold text-slate-900 truncate">
                         {selectedMenuItem.itemName}
                       </span>
-                      {selectedMenuItem.itemNameTamil && (
-                        <span className="text-[10px] sm:text-[11px] text-emerald-800 truncate hidden xs:inline">
-                          ({selectedMenuItem.itemNameTamil})
-                        </span>
-                      )}
                     </div>
                     <div className="text-right shrink-0 font-mono pl-2 border-l border-emerald-200 flex items-center gap-1">
                       <span className="text-sm sm:text-base font-black text-emerald-800">

@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { PrinterConnectionService, ConnectedPrinterInfo } from '../../services/printerConnectionService';
 import { EscPosService } from '../../services/escposService';
+import { PrinterService } from '../../services/printerService';
 import { Bill, BillItem, RestaurantSettings } from '../../types';
 
 interface DirectHardwarePrintModalProps {
@@ -99,7 +100,11 @@ export const DirectHardwarePrintModal: React.FC<DirectHardwarePrintModalProps> =
       const result = await PrinterConnectionService.connectUsb();
       if (result.success) {
         setPrinterInfo(PrinterConnectionService.getConnectedPrinter());
-        setTestPrintStatus('Rugtek RP326 paired via Direct WebUSB! Press [Ctrl] to print.');
+        if ((result as any).isSpoolerFallback) {
+          setTestPrintStatus('USB Printer recognized! Managed by Windows driver. Standard 1-click Windows thermal spooler printing is active.');
+        } else {
+          setTestPrintStatus('Thermal printer paired via Direct WebUSB! Direct printing is active.');
+        }
       } else {
         setErrorMsg(result.error || 'Failed to connect USB device');
       }
@@ -159,7 +164,14 @@ export const DirectHardwarePrintModal: React.FC<DirectHardwarePrintModalProps> =
         PrinterConnectionService.markTestPrintVerified();
         setPrinterInfo(PrinterConnectionService.getConnectedPrinter());
       } else {
-        setErrorMsg(res.error || 'Direct thermal communication failed. Check cable and port.');
+        // Fallback to standard thermal printer spooler (supports all USB thermal printers)
+        const printRes = PrinterService.printBill(sampleBill, sampleItems, settings, false);
+        if (printRes.success) {
+          PrinterConnectionService.markTestPrintVerified();
+          setTestPrintStatus('Test slip dispatched via Windows USB print spooler! Paper should feed now.');
+        } else {
+          setErrorMsg(res.error || printRes.error || 'Direct thermal communication failed. Check cable and port.');
+        }
       }
     } catch (err: any) {
       setErrorMsg(err.message || 'Error executing test print');

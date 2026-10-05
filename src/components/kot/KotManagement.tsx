@@ -54,6 +54,7 @@ import {
 import { db, sanitizeForFirestore } from '../../services/firebase';
 import { ThermalReceiptModal } from '../common/ThermalReceiptModal';
 import { ThermalKotModal } from '../common/ThermalKotModal';
+import { KotSummarySlipModal } from './KotSummarySlipModal';
 import { DEFAULT_FALLBACK_MENU_ITEMS, DEFAULT_CATEGORIES } from '../../data/fallbackMenu';
 import { 
   saveKotLocally, 
@@ -94,7 +95,19 @@ const KITCHEN_NOTES_PRESETS = [
 ];
 
 export const KotManagement: React.FC<KotManagementProps> = ({ settings, initialSubTab, onTabChange }) => {
-  const { currentUser } = useAuth();
+  const { currentUser, isManager: authIsManager, isOwner: authIsOwner } = useAuth();
+
+  // Role check: managers and owners have permission to print consolidated KOT summary slips
+  const isManager = Boolean(
+    authIsManager ||
+    authIsOwner ||
+    currentUser?.roleId?.toLowerCase() === 'manager' ||
+    currentUser?.roleId?.toLowerCase() === 'owner' ||
+    (currentUser as any)?.role?.toLowerCase() === 'manager' ||
+    (currentUser as any)?.role?.toLowerCase() === 'owner' ||
+    !currentUser ||
+    currentUser.roleId === undefined
+  );
 
   // Active View Tab
   const [activeTab, setActiveTab] = useState<'running' | 'create'>(initialSubTab || 'running');
@@ -109,9 +122,10 @@ export const KotManagement: React.FC<KotManagementProps> = ({ settings, initialS
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string>('ACTIVE'); // ACTIVE, ALL, OPEN, SENT, PREPARING, READY, COMPLETED, BILLED, CANCELLED
 
-  // Multi-selection state for kitchen bulk operations
+  // Multi-selection state for kitchen bulk operations & manager summary print
   const [selectedKotIds, setSelectedKotIds] = useState<string[]>([]);
   const [bulkUpdating, setBulkUpdating] = useState(false);
+  const [isSummarySlipModalOpen, setIsSummarySlipModalOpen] = useState(false);
 
   // Create / Edit KOT Draft State
   const [tableNumber, setTableNumber] = useState('T-1');
@@ -666,8 +680,16 @@ export const KotManagement: React.FC<KotManagementProps> = ({ settings, initialS
       );
 
       setBilledReceipt(result);
+      const isSandboxed = PrinterService.isSandboxed();
+      const skipPreview = localStorage.getItem('pos_fast_rush_mode') === 'true' || Boolean(settings?.skipPrintPreview);
+      if (isSandboxed || !skipPreview) {
+        setIsReceiptOpen(true);
+      } else {
+        setIsReceiptOpen(false);
+      }
       try {
-        PrinterService.printBill(result.bill, result.items, settings);
+        // Direct print to thermal printer immediately with zero preview modal
+        PrinterService.printBill(result.bill, result.items, settings, true);
       } catch (printErr) {
         console.warn('Bill print error:', printErr);
       }
@@ -696,6 +718,28 @@ export const KotManagement: React.FC<KotManagementProps> = ({ settings, initialS
     });
   }, [runningKots, statusFilter]);
 
+  // Completed KOTs in current filtered view
+  const completedVisibleKots = useMemo(() => {
+    return filteredKots.filter(({ kot }) => kot.status === 'COMPLETED');
+  }, [filteredKots]);
+
+  // Selected KOT objects that are COMPLETED (for manager summary slip)
+  const selectedCompletedKots = useMemo(() => {
+    return runningKots.filter(({ kot }) => 
+      selectedKotIds.includes(kot.id) && kot.status === 'COMPLETED'
+    );
+  }, [runningKots, selectedKotIds]);
+
+  // Selected KOT objects that are active / not yet completed (for bulk complete)
+  const selectedActiveKots = useMemo(() => {
+    return runningKots.filter(({ kot }) => 
+      selectedKotIds.includes(kot.id) && 
+      kot.status !== 'COMPLETED' && 
+      kot.status !== 'BILLED' && 
+      kot.status !== 'CANCELLED'
+    );
+  }, [runningKots, selectedKotIds]);
+
   // KOTs in current view that can be marked as Completed (active and not already completed)
   const eligibleVisibleKots = useMemo(() => {
     return filteredKots.filter(({ kot }) => 
@@ -705,9 +749,21 @@ export const KotManagement: React.FC<KotManagementProps> = ({ settings, initialS
     );
   }, [filteredKots]);
 
-  const isAllEligibleSelected = 
-    eligibleVisibleKots.length > 0 && 
-    eligibleVisibleKots.every(({ kot }) => selectedKotIds.includes(kot.id));
+  // Selectable KOTs in current view:
+  // When viewing COMPLETED tab, selectable are all visible completed KOTs.
+  // Otherwise, selectable are all active non-billed, non-cancelled KOTs.
+  const selectableVisibleKots = useMemo(() => {
+    if (statusFilter === 'COMPLETED') {
+      return completedVisibleKots;
+    }
+    return filteredKots.filter(({ kot }) => 
+      kot.status !== 'BILLED' && kot.status !== 'CANCELLED'
+    );
+  }, [filteredKots, statusFilter, completedVisibleKots]);
+
+  const isAllSelectableSelected = 
+    selectableVisibleKots.length > 0 && 
+    selectableVisibleKots.every(({ kot }) => selectedKotIds.includes(kot.id));
 
   const handleToggleSelectKot = (kotId: string) => {
     setSelectedKotIds((prev) => 
@@ -716,10 +772,24 @@ export const KotManagement: React.FC<KotManagementProps> = ({ settings, initialS
   };
 
   const handleToggleSelectAll = () => {
-    if (isAllEligibleSelected) {
-      setSelectedKotIds([]);
+    if (isAllSelectableSelected) {
+      const visibleIds = selectableVisibleKots.map(({ kot }) => kot.id);
+      setSelectedKotIds((prev) => prev.filter((id) => !visibleIds.includes(id)));
     } else {
-      setSelectedKotIds(eligibleVisibleKots.map(({ kot }) => kot.id));
+      const newIds = Array.from(new Set([...selectedKotIds, ...selectableVisibleKots.map(({ kot }) => kot.id)]));
+      setSelectedKotIds(newIds);
+    }
+  };
+
+  // Helper for managers to quickly select all completed KOTs across current view
+  const handleSelectAllCompleted = () => {
+    const targetCompleted = runningKots.filter(({ kot }) => kot.status === 'COMPLETED');
+    const targetIds = targetCompleted.map(({ kot }) => kot.id);
+    const allAlreadySelected = targetIds.length > 0 && targetIds.every((id) => selectedKotIds.includes(id));
+    if (allAlreadySelected) {
+      setSelectedKotIds((prev) => prev.filter((id) => !targetIds.includes(id)));
+    } else {
+      setSelectedKotIds((prev) => Array.from(new Set([...prev, ...targetIds])));
     }
   };
 
@@ -727,14 +797,14 @@ export const KotManagement: React.FC<KotManagementProps> = ({ settings, initialS
     setSelectedKotIds([]);
   };
 
-  // Bulk mark selected KOTs as Completed simultaneously
+  // Bulk mark selected active KOTs as Completed simultaneously
   const handleBulkMarkCompleted = async () => {
-    if (selectedKotIds.length === 0) return;
+    const targetIds = selectedActiveKots.map(({ kot }) => kot.id);
+    if (targetIds.length === 0) return;
 
     setBulkUpdating(true);
     const now = Date.now();
-    const count = selectedKotIds.length;
-    const targetIds = [...selectedKotIds];
+    const count = targetIds.length;
 
     try {
       // 1. Batch update in Firestore
@@ -761,9 +831,7 @@ export const KotManagement: React.FC<KotManagementProps> = ({ settings, initialS
         )
       );
 
-      // 3. Clear selection
-      setSelectedKotIds([]);
-
+      // Keep them selected so the manager can immediately review or print the summary slip!
       setNotification({
         type: 'success',
         message: `Marked ${count} Kitchen Order Ticket${count > 1 ? 's' : ''} as Completed!`
@@ -923,7 +991,6 @@ export const KotManagement: React.FC<KotManagementProps> = ({ settings, initialS
                     className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 text-xs shrink-0 font-medium"
                   >
                     <span className="text-white font-bold">{item.name}</span>
-                    {item.tamil && <span className="text-slate-400 text-[10px]">({item.tamil})</span>}
                     <span className="bg-amber-500/20 text-amber-300 font-mono font-black px-1.5 py-0.2 rounded text-xs border border-amber-500/30">
                       ×{item.qty}
                     </span>
@@ -973,61 +1040,102 @@ export const KotManagement: React.FC<KotManagementProps> = ({ settings, initialS
               ))}
             </div>
 
-            {/* Select All Toggle for active KOTs */}
-            {eligibleVisibleKots.length > 0 && (
-              <div className="flex items-center gap-1.5 ml-auto shrink-0">
+            {/* Select All Toggle for KOTs */}
+            {selectableVisibleKots.length > 0 && (
+              <div className="flex items-center gap-1.5 ml-auto shrink-0 flex-wrap">
+                {statusFilter === 'COMPLETED' && isManager && (
+                  <button
+                    type="button"
+                    onClick={handleSelectAllCompleted}
+                    className="px-2.5 py-1 h-7 sm:h-8 rounded-lg text-[11px] sm:text-xs font-bold border border-amber-500/40 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 transition-colors flex items-center gap-1 cursor-pointer shrink-0"
+                    title="Select all completed KOTs to print as a summary slip"
+                  >
+                    <Printer className="w-3 h-3 text-amber-400" />
+                    <span>Select All Completed</span>
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={handleToggleSelectAll}
                   className={`px-2.5 py-1 h-7 sm:h-8 rounded-lg text-[11px] sm:text-xs font-bold border transition-colors flex items-center gap-1 cursor-pointer shrink-0 ${
-                    isAllEligibleSelected
+                    isAllSelectableSelected
                       ? 'bg-emerald-500 text-slate-950 border-emerald-400 font-black'
                       : 'bg-slate-800 text-slate-300 hover:text-white border-slate-700'
                   }`}
-                  title="Select or deselect all active kitchen orders in view"
+                  title={statusFilter === 'COMPLETED' ? "Select or deselect all completed kitchen orders" : "Select or deselect orders in view"}
                 >
-                  {isAllEligibleSelected ? <CheckSquare className="w-3 h-3" /> : <Square className="w-3 h-3" />}
-                  <span>{isAllEligibleSelected ? 'Deselect All' : `Select All (${eligibleVisibleKots.length})`}</span>
+                  {isAllSelectableSelected ? <CheckSquare className="w-3 h-3" /> : <Square className="w-3 h-3" />}
+                  <span>
+                    {isAllSelectableSelected 
+                      ? 'Deselect All' 
+                      : statusFilter === 'COMPLETED' 
+                      ? `Select All Completed (${selectableVisibleKots.length})` 
+                      : `Select All (${selectableVisibleKots.length})`}
+                  </span>
                 </button>
               </div>
             )}
           </div>
 
-          {/* Multi-Select Bulk Action Bar for Kitchen Staff */}
+          {/* Multi-Select Bulk Action Bar for Kitchen Staff & Manager Summary Slip Printing */}
           {selectedKotIds.length > 0 && (
             <div className="bg-emerald-950/90 border-2 border-emerald-500/80 p-3 rounded-xl flex flex-wrap items-center justify-between gap-3 shadow-xl shadow-emerald-950/50 animate-in fade-in slide-in-from-top-2 duration-150 shrink-0">
               <div className="flex items-center gap-2.5">
-                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500 text-slate-950 font-black text-sm shadow-xs">
+                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500 text-slate-950 font-black text-sm shadow-xs shrink-0">
                   {selectedKotIds.length}
                 </span>
                 <div>
-                  <div className="font-bold text-xs sm:text-sm text-white flex items-center gap-1.5">
+                  <div className="font-bold text-xs sm:text-sm text-white flex items-center gap-1.5 flex-wrap">
                     <ListChecks className="w-4 h-4 text-emerald-400" />
                     <span>{selectedKotIds.length} {selectedKotIds.length === 1 ? 'KOT' : 'KOTs'} Selected</span>
+                    {selectedCompletedKots.length > 0 && (
+                      <span className="bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10.5px] px-2 py-0.5 rounded-full font-bold">
+                        {selectedCompletedKots.length} Completed
+                      </span>
+                    )}
                   </div>
                   <div className="text-[11px] text-emerald-300">
-                    Kitchen staff bulk dispatch: mark multiple orders as Completed simultaneously
+                    {selectedCompletedKots.length > 0 && isManager
+                      ? `Managers can print a consolidated summary slip for ${selectedCompletedKots.length} selected completed KOT${selectedCompletedKots.length > 1 ? 's' : ''}`
+                      : 'Kitchen staff bulk dispatch: mark multiple orders as Completed simultaneously'}
                   </div>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 ml-auto">
+              <div className="flex items-center gap-2 ml-auto flex-wrap">
                 <button
                   type="button"
                   onClick={handleClearSelection}
-                  className="px-2.5 py-1 h-7 rounded-md bg-slate-900/90 hover:bg-slate-900 text-slate-300 hover:text-white text-[11px] font-semibold border border-slate-700 transition-colors cursor-pointer"
+                  className="px-2.5 py-1.5 h-8 rounded-lg bg-slate-900/90 hover:bg-slate-900 text-slate-300 hover:text-white text-[11px] font-semibold border border-slate-700 transition-colors cursor-pointer"
                 >
                   Cancel Selection
                 </button>
-                <button
-                  type="button"
-                  onClick={handleBulkMarkCompleted}
-                  disabled={bulkUpdating}
-                  className="px-4 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 active:bg-emerald-600 text-slate-950 font-black text-xs sm:text-sm flex items-center gap-2 shadow-lg shadow-emerald-500/20 transition-all cursor-pointer disabled:opacity-50"
-                >
-                  <CheckCircle2 className="w-4 h-4 text-slate-950" />
-                  <span>{bulkUpdating ? 'Marking Completed...' : `Mark Completed (${selectedKotIds.length})`}</span>
-                </button>
+
+                {/* Manager Action: Print Multiple Completed KOTs as a Single Summary Slip */}
+                {isManager && selectedCompletedKots.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setIsSummarySlipModalOpen(true)}
+                    className="px-3.5 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-slate-950 font-black text-xs sm:text-sm flex items-center gap-2 shadow-lg shadow-amber-500/20 transition-all cursor-pointer"
+                    title="Print single consolidated summary slip for all selected completed KOTs"
+                  >
+                    <Printer className="w-4 h-4 text-slate-950" />
+                    <span>Print Summary Slip ({selectedCompletedKots.length} Completed)</span>
+                  </button>
+                )}
+
+                {/* Bulk Mark Active Orders as Completed */}
+                {selectedActiveKots.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleBulkMarkCompleted}
+                    disabled={bulkUpdating}
+                    className="px-4 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 active:bg-emerald-600 text-slate-950 font-black text-xs sm:text-sm flex items-center gap-2 shadow-lg shadow-emerald-500/20 transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    <CheckCircle2 className="w-4 h-4 text-slate-950" />
+                    <span>{bulkUpdating ? 'Marking Completed...' : `Mark Completed (${selectedActiveKots.length})`}</span>
+                  </button>
+                )}
               </div>
             </div>
           )}
@@ -1078,7 +1186,7 @@ export const KotManagement: React.FC<KotManagementProps> = ({ settings, initialS
                       {/* Card Header: Table, KOT #, Status & Urgency Clock */}
                       <div className="flex justify-between items-start gap-2">
                         <div className="flex items-start gap-2 min-w-0 flex-1">
-                          {/* Kitchen multi-select checkbox (compact secondary control) */}
+                          {/* Kitchen / Manager multi-select checkbox (compact secondary control) */}
                           {kot.status !== 'BILLED' && kot.status !== 'CANCELLED' && (
                             <button
                               type="button"
@@ -1089,9 +1197,17 @@ export const KotManagement: React.FC<KotManagementProps> = ({ settings, initialS
                               className={`mt-0.5 w-7 h-7 p-1 rounded-md border transition-all cursor-pointer shrink-0 flex items-center justify-center ${
                                 isSelected
                                   ? 'bg-emerald-500 border-emerald-400 text-slate-950 shadow-xs'
+                                  : kot.status === 'COMPLETED'
+                                  ? 'bg-slate-950 border-amber-500/50 text-amber-400 hover:border-amber-400 hover:text-white'
                                   : 'bg-slate-950 border-slate-700 text-slate-400 hover:border-slate-500 hover:text-white'
                               }`}
-                              title={isSelected ? "Deselect this KOT" : "Select this KOT for bulk completion"}
+                              title={
+                                isSelected 
+                                  ? "Deselect this KOT" 
+                                  : kot.status === 'COMPLETED'
+                                  ? "Select completed KOT for manager summary slip"
+                                  : "Select this KOT for bulk completion"
+                              }
                             >
                               {isSelected ? (
                                 <CheckSquare className="w-3.5 h-3.5" />
@@ -1154,11 +1270,6 @@ export const KotManagement: React.FC<KotManagementProps> = ({ settings, initialS
                               <div className="font-bold text-slate-100 text-sm sm:text-[13px] leading-snug break-words">
                                 {idx + 1}. {itm.itemName}
                               </div>
-                              {itm.itemNameTamil && (
-                                <div className="text-xs sm:text-[11px] text-amber-200/90 font-sans mt-0.5 font-normal">
-                                  {itm.itemNameTamil}
-                                </div>
-                              )}
                               {itm.notes && (
                                 <span className="inline-flex items-center gap-1 text-xs sm:text-[11px] text-amber-300 font-sans bg-amber-950/60 border border-amber-500/40 px-2 py-0.5 rounded mt-1 font-medium">
                                   <span>⚡</span>
@@ -1447,11 +1558,6 @@ export const KotManagement: React.FC<KotManagementProps> = ({ settings, initialS
                       <h4 className="font-bold text-xs sm:text-[13px] text-slate-100 mt-1 line-clamp-1 sm:line-clamp-2 leading-tight group-hover:text-amber-200">
                         {item.itemName}
                       </h4>
-                      {item.itemNameTamil && (
-                        <p className="text-[10px] text-slate-400 truncate leading-tight font-sans">
-                          {item.itemNameTamil}
-                        </p>
-                      )}
                     </div>
 
                     <div className="mt-1.5 flex items-center justify-between pt-1 border-t border-slate-900/80 gap-1">
@@ -1798,6 +1904,24 @@ export const KotManagement: React.FC<KotManagementProps> = ({ settings, initialS
           settings={settings}
           isOpen={isReceiptOpen}
           onClose={() => setIsReceiptOpen(false)}
+        />
+      )}
+
+      {/* Manager Multi-KOT Summary Slip Preview & Print Modal */}
+      {isSummarySlipModalOpen && selectedCompletedKots.length > 0 && (
+        <KotSummarySlipModal
+          isOpen={isSummarySlipModalOpen}
+          onClose={() => setIsSummarySlipModalOpen(false)}
+          selectedKots={selectedCompletedKots}
+          settings={settings}
+          managerName={currentUser?.name || (currentUser as any)?.displayName || 'Shift Manager'}
+          onPrinted={() => {
+            setNotification({
+              type: 'success',
+              message: `Printed summary slip for ${selectedCompletedKots.length} completed KOTs!`
+            });
+            setTimeout(() => setNotification(null), 3500);
+          }}
         />
       )}
 

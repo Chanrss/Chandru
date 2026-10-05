@@ -57,24 +57,27 @@ body.pos-printing {
 }
 
 @media print {
-  /* Set body overflow to hidden and establish a fixed z-index context when print-ready is active */
-  body.print-ready,
-  body.pos-printing {
-    overflow: hidden !important;
-    position: relative !important;
-    z-index: 1 !important;
-  }
-
+  /* Ensure body and html allow full continuous page flow for thermal receipt paper */
+  html,
   body {
-    overflow: hidden !important;
-    position: relative !important;
-    z-index: 1 !important;
+    overflow: visible !important;
+    height: auto !important;
+    min-height: 100% !important;
+    position: static !important;
     background-color: white !important;
     color: black !important;
     margin: 0 !important;
     padding: 0 !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
+  }
+
+  body.print-ready,
+  body.pos-printing {
+    overflow: visible !important;
+    height: auto !important;
+    position: static !important;
+    z-index: 1 !important;
   }
 
   /* Hide standard web application UI, modals, buttons, and navigation during print */
@@ -97,6 +100,8 @@ body.pos-printing {
     display: block !important;
     position: static !important;
     width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
     margin: 0 !important;
     padding: 0 !important;
     background: white !important;

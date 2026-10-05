@@ -537,6 +537,14 @@ export const PosScreen: React.FC<PosScreenProps> = ({ settings }) => {
       setLastPrintedBill({ bill: prepared.bill, items: prepared.items });
       setSavedBill(prepared.bill);
       setSavedBillItems(prepared.items);
+      
+      const isSandboxed = PrinterService.isSandboxed();
+      const skipPreview = localStorage.getItem('pos_fast_rush_mode') === 'true' || Boolean(settings?.skipPrintPreview);
+      if (isSandboxed || !skipPreview) {
+        setIsReceiptModalOpen(true);
+      } else {
+        setIsReceiptModalOpen(false);
+      }
 
       setNotification({
         type: 'success',
@@ -1023,11 +1031,6 @@ export const PosScreen: React.FC<PosScreenProps> = ({ settings }) => {
                           <h4 className="font-bold text-xs text-slate-900 line-clamp-1 leading-tight mt-0.5 group-hover:text-amber-900">
                             {item.itemName}
                           </h4>
-                          {item.itemNameTamil && (
-                            <p className="text-[9px] text-slate-400 truncate leading-tight">
-                              {item.itemNameTamil}
-                            </p>
-                          )}
                         </div>
                       </div>
 

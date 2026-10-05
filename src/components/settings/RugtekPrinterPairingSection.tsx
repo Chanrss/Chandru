@@ -27,6 +27,7 @@ import {
   RUGTEK_RP326B_PROFILE 
 } from '../../services/printerConnectionService';
 import { EscPosService } from '../../services/escposService';
+import { PrinterService } from '../../services/printerService';
 import { RestaurantSettings, Bill, BillItem } from '../../types';
 
 interface RugtekPrinterPairingSectionProps {
@@ -121,10 +122,17 @@ export const RugtekPrinterPairingSection: React.FC<RugtekPrinterPairingSectionPr
     try {
       const result = await PrinterConnectionService.connectUsb();
       if (result.success) {
-        showFeedback(
-          'success',
-          `Rugtek RP326 successfully paired via WebUSB API! Direct raw bulk communication established.`
-        );
+        if ((result as any).isSpoolerFallback) {
+          showFeedback(
+            'success',
+            `USB printer recognized! Windows driver (usbprint.sys) is managing this device. Standard 1-click thermal printing is active.`
+          );
+        } else {
+          showFeedback(
+            'success',
+            `Thermal printer successfully paired via WebUSB API! Direct raw bulk communication established.`
+          );
+        }
         if (onUpdateSettings) {
           onUpdateSettings({
             printerModelName: 'Rugtek RP326B',
@@ -217,10 +225,22 @@ export const RugtekPrinterPairingSection: React.FC<RugtekPrinterPairingSectionPr
         PrinterConnectionService.markTestPrintVerified();
         showFeedback(
           'success',
-          `Test receipt sent successfully via ${res.channel}! Direct Rugtek RP326 communication is 100% verified.`
+          `Test receipt sent successfully via ${res.channel}! Direct thermal communication verified.`
         );
       } else {
-        showFeedback('error', res.error || 'Direct print failed. Verify cable and hardware port.');
+        // Fallback to standard thermal printer spooler (supports all USB thermal printers)
+        const printRes = PrinterService.printBill(sampleBill, sampleItems, {
+          ...settings,
+          paperWidth: '80mm',
+          restaurantName: settings?.restaurantName || 'SRI SARAVANA BHAVAN',
+          restaurantNameTamil: settings?.restaurantNameTamil || 'ஸ்ரீ சரவண பவன்'
+        }, false);
+        if (printRes.success) {
+          PrinterConnectionService.markTestPrintVerified();
+          showFeedback('success', 'Test slip dispatched via Windows USB print spooler! Paper should feed now.');
+        } else {
+          showFeedback('error', res.error || printRes.error || 'Direct print failed. Verify USB cable and printer power.');
+        }
       }
     } catch (e: any) {
       showFeedback('error', e.message || 'Error dispatching test print.');

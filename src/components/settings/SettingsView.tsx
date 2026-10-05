@@ -134,7 +134,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ settings: initialSet
     receiptShowEnglishName: false,
     receiptFeedLines: 2,
     autoPrintOnSave: true,
-    skipPrintPreview: false,
+    skipPrintPreview: true,
     updatedAt: Date.now()
   });
 
@@ -205,7 +205,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ settings: initialSet
         watermarkOpacity: initialSettings.watermarkOpacity !== undefined ? initialSettings.watermarkOpacity : (prev.watermarkOpacity !== undefined ? prev.watermarkOpacity : 0.12),
         compactMode: initialSettings.compactMode !== undefined ? Boolean(initialSettings.compactMode) : true,
         autoPrintOnSave: initialSettings.autoPrintOnSave !== undefined ? initialSettings.autoPrintOnSave : (prev.autoPrintOnSave !== undefined ? prev.autoPrintOnSave : true),
-        skipPrintPreview: initialSettings.skipPrintPreview !== undefined ? initialSettings.skipPrintPreview : (prev.skipPrintPreview !== undefined ? prev.skipPrintPreview : false)
+        skipPrintPreview: initialSettings.skipPrintPreview !== undefined ? initialSettings.skipPrintPreview : (prev.skipPrintPreview !== undefined ? prev.skipPrintPreview : true)
       }));
     }
   }, [initialSettings]);

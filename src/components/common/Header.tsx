@@ -439,6 +439,21 @@ export const Header: React.FC<HeaderProps> = ({
             </span>
           </button>
 
+          {/* Iframe Sandbox Standalone Tab Launcher */}
+          {typeof window !== 'undefined' && window.self !== window.top && (
+            <a
+              href={window.location.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 border border-amber-600 shadow-2xs transition-all shrink-0 cursor-pointer"
+              title="Open POS in standalone browser tab to access physical USB / Serial thermal printer without iframe sandbox limits"
+            >
+              <ExternalLink className="w-3 h-3 text-slate-950" />
+              <span className="hidden sm:inline">Open in Tab (For Printer)</span>
+              <span className="sm:hidden">New Tab</span>
+            </a>
+          )}
+
           {/* Fullscreen Toggle Button */}
           <button
             type="button"

@@ -607,6 +607,178 @@ export class PrinterService {
   }
 
   /**
+   * Generates printable consolidated summary slip for multiple completed KOTs
+   */
+  static generateKotSummarySlipHTML(
+    kotsWithItems: { kot: Kot; items: KotItem[] }[],
+    settings?: RestaurantSettings,
+    managerName?: string
+  ): string {
+    const is58mm = settings?.paperWidth === '58mm' || settings?.printerType === 'THERMAL_58MM';
+    const paperWidth = is58mm ? '48mm' : '72mm';
+    const restaurantName = settings?.restaurantName || 'SRI SARAVANA BHAVAN';
+    const now = new Date();
+    const dateFormatted = now.toLocaleDateString('en-GB');
+    const timeFormatted = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    // Aggregate items across all KOTs
+    const itemMap = new Map<string, { itemName: string; itemNameTamil?: string; quantity: number }>();
+    kotsWithItems.forEach(({ kot, items }) => {
+      const effectiveItems = (items && items.length > 0) ? items : (kot.items || []);
+      effectiveItems.forEach((itm) => {
+        const key = itm.itemName.trim().toLowerCase();
+        if (!itemMap.has(key)) {
+          itemMap.set(key, { itemName: itm.itemName, itemNameTamil: itm.itemNameTamil, quantity: 0 });
+        }
+        itemMap.get(key)!.quantity += itm.quantity;
+      });
+    });
+
+    const consolidatedItems = Array.from(itemMap.values()).sort((a, b) => b.quantity - a.quantity);
+    const totalDishesCount = consolidatedItems.reduce((acc, i) => acc + i.quantity, 0);
+
+    const consolidatedRows = consolidatedItems.map((itm, i) => `
+      <tr>
+        <td style="padding: 2.5px 0; font-weight: bold; font-size: 13px; font-family: monospace;">${i + 1}. ${itm.itemName}</td>
+        <td style="text-align: right; padding: 2.5px 0; font-weight: bold; font-size: 14px; font-family: monospace;">× ${itm.quantity}</td>
+      </tr>
+    `).join('');
+
+    const individualKotRows = kotsWithItems.map(({ kot, items }) => {
+      const effectiveItems = (items && items.length > 0) ? items : (kot.items || []);
+      const count = effectiveItems.reduce((acc, i) => acc + i.quantity, 0);
+      const timeStr = new Date(kot.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      return `
+        <tr>
+          <td style="padding: 2px 0; font-size: 11px; font-family: monospace;">${kot.kotNumber} (${kot.tableNumber || 'Take Away'})</td>
+          <td style="text-align: center; padding: 2px 0; font-size: 11px;">${timeStr}</td>
+          <td style="text-align: right; padding: 2px 0; font-size: 11px; font-weight: bold;">${count} items</td>
+        </tr>
+      `;
+    }).join('');
+
+    const tablesList = Array.from(
+      new Set(kotsWithItems.map(({ kot }) => kot.tableNumber || (kot.orderType === 'TAKE_AWAY' ? 'Take Away' : 'Dine In')))
+    ).join(', ');
+
+    return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>KOT Summary Slip - ${kotsWithItems.length} Completed KOTs</title>
+  <style>
+    @page { margin: 0; size: auto; }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: #fff;
+      color: #000;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 12px;
+      line-height: 1.25;
+    }
+    body {
+      width: ${paperWidth};
+      margin: 0 auto;
+      padding: 6px 2px;
+    }
+    .center { text-align: center; }
+    .bold { font-weight: bold; }
+    .summary-title {
+      font-size: 15px;
+      font-weight: bold;
+      text-align: center;
+      border: 2px solid #000;
+      padding: 4px;
+      margin: 4px 0 6px 0;
+    }
+    .divider { border-top: 1px dashed #000; margin: 5px 0; }
+    .double-divider { border-top: 2px solid #000; margin: 6px 0; }
+    table { width: 100%; border-collapse: collapse; }
+    td, th { vertical-align: top; }
+    @media print {
+      body { width: 100%; margin: 0; padding: 2px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="center bold" style="font-size: 14px; text-transform: uppercase;">${restaurantName}</div>
+  <div class="summary-title">COMPLETED KOTS SUMMARY SLIP</div>
+
+  <table>
+    <tr>
+      <td class="bold">Print Date: ${dateFormatted}</td>
+      <td style="text-align: right;" class="bold">${timeFormatted}</td>
+    </tr>
+    <tr>
+      <td>Manager: ${managerName || 'Shift Manager'}</td>
+      <td style="text-align: right;" class="bold">Status: COMPLETED</td>
+    </tr>
+    <tr>
+      <td colspan="2" style="padding-top: 2px;">
+        <b>Completed KOTs:</b> ${kotsWithItems.length} tickets
+      </td>
+    </tr>
+    <tr>
+      <td colspan="2" style="font-size: 11px;">
+        <b>Tables:</b> ${tablesList || 'N/A'}
+      </td>
+    </tr>
+  </table>
+
+  <div class="divider"></div>
+  <div class="center bold" style="font-size: 12px; letter-spacing: 0.5px; padding: 2px 0;">
+    CONSOLIDATED ITEM PRODUCTION
+  </div>
+  <div class="divider"></div>
+
+  <table>
+    <thead>
+      <tr style="border-bottom: 1px dashed #000;">
+        <th style="text-align: left; padding: 2px 0; font-size: 11px;">Dish Name</th>
+        <th style="text-align: right; padding: 2px 0; font-size: 11px;">Total Qty</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${consolidatedRows}
+    </tbody>
+    <tfoot>
+      <tr style="border-top: 1px dashed #000;">
+        <td style="padding: 4px 0; font-weight: bold; font-size: 12px;">TOTAL DISHES / PORTIONS:</td>
+        <td style="padding: 4px 0; text-align: right; font-weight: bold; font-size: 14px;">${totalDishesCount}</td>
+      </tr>
+    </tfoot>
+  </table>
+
+  <div class="divider"></div>
+  <div class="bold" style="font-size: 11px; margin-bottom: 2px;">TICKETS INCLUDED IN SUMMARY:</div>
+  <table>
+    <thead>
+      <tr style="border-bottom: 1px dotted #000; font-size: 10px;">
+        <th style="text-align: left; padding: 1px 0;">KOT (Table)</th>
+        <th style="text-align: center; padding: 1px 0;">Time</th>
+        <th style="text-align: right; padding: 1px 0;">Items</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${individualKotRows}
+    </tbody>
+  </table>
+
+  <div class="double-divider"></div>
+  <div class="center bold" style="font-size: 11px;">*** ALL ${kotsWithItems.length} KOTS COMPLETED & VERIFIED ***</div>
+  <div class="center" style="font-size: 10px; margin-top: 3px;">Kitchen Dispatch & Shift Audit Copy</div>
+
+  <div style="margin-top: 18px; display: flex; justify-content: space-between; font-size: 10px; font-weight: bold;">
+    <span>Manager Sign: ________</span>
+    <span>Chef Sign: ________</span>
+  </div>
+</body>
+</html>`;
+  }
+
+  /**
    * Safe focus restoration helper to prevent POS screen lockups after print operations.
    */
   private static restoreWindowFocus(previousActiveElement?: HTMLElement | null): void {
@@ -636,96 +808,7 @@ export class PrinterService {
     htmlContent: string, 
     settings?: RestaurantSettings
   ): { success: boolean; restrictedInIframe?: boolean; error?: string } {
-    if (typeof window === 'undefined' || typeof document === 'undefined') {
-      return { success: false, error: 'Window or document not available' };
-    }
-
-    const activeEl = document.activeElement as HTMLElement | null;
-
-    // Apply print-ready and pos-printing classes to establish fixed stacking context & lock overflow
-    document.body.classList.add('print-ready');
-    document.body.classList.add('pos-printing');
-
-    try {
-      // If running in a test environment with mocked window.print, invoke it directly
-      if (typeof window !== 'undefined' && window.print && (window.print as any).mock) {
-        let printRoot = document.getElementById('pos-print-root');
-        if (!printRoot) {
-          printRoot = document.createElement('div');
-          printRoot.id = 'pos-print-root';
-          document.body.appendChild(printRoot);
-        }
-        printRoot.innerHTML = htmlContent;
-        if (typeof window.focus === 'function') window.focus();
-        window.print();
-        PrinterService.restoreWindowFocus(activeEl);
-        return { success: true };
-      }
-
-      // Production execution: Use isolated hidden iframe to prevent the main POS screen
-      // and fullscreen window from minimizing or flickering on Windows/Chrome.
-      let iframe = document.getElementById('pos-thermal-printer-frame') as HTMLIFrameElement | null;
-      if (!iframe) {
-        iframe = document.createElement('iframe');
-        iframe.id = 'pos-thermal-printer-frame';
-        iframe.setAttribute('style', 'position:fixed;left:-9999px;top:-9999px;width:320px;height:450px;border:0;opacity:0;pointer-events:none;');
-        document.body.appendChild(iframe);
-      }
-
-      const contentWindow = iframe.contentWindow;
-      if (!contentWindow) {
-        return PrinterService.printViaDirectDOM(htmlContent, settings);
-      }
-
-      const doc = contentWindow.document;
-      doc.open();
-      doc.write(htmlContent);
-      doc.close();
-
-      const executePrint = (): { success: boolean; restrictedInIframe?: boolean; error?: string } => {
-        try {
-          if ('onafterprint' in contentWindow) {
-            contentWindow.onafterprint = () => {
-              PrinterService.restoreWindowFocus(activeEl);
-            };
-          }
-
-          contentWindow.focus();
-          contentWindow.print();
-
-          // Safety timeout to ensure focus returns to POS terminal without minimizing window
-          setTimeout(() => {
-            PrinterService.restoreWindowFocus(activeEl);
-          }, 100);
-
-          return { success: true };
-        } catch (printErr: any) {
-          console.error('Thermal printer iframe print failed:', printErr);
-          const isRestricted = printErr?.name === 'SecurityError' || 
-            String(printErr?.message || '').toLowerCase().includes('sandbox') ||
-            String(printErr?.message || '').toLowerCase().includes('allow-modals');
-          
-          if (!isRestricted) {
-            return PrinterService.printViaDirectDOM(htmlContent, settings);
-          }
-          return { success: false, restrictedInIframe: isRestricted, error: printErr?.message || 'Thermal printer print failed' };
-        }
-      };
-
-      const img = doc.querySelector('img');
-      if (img && !img.complete) {
-        img.onload = () => executePrint();
-        img.onerror = () => executePrint();
-        setTimeout(executePrint, 80);
-        return { success: true };
-      } else {
-        return executePrint();
-      }
-    } catch (err: any) {
-      console.error('Thermal printer print preparation failed:', err);
-      PrinterService.restoreWindowFocus(activeEl);
-      return { success: false, error: err?.message || 'Thermal printer print failed' };
-    }
+    return PrinterService.printViaDirectDOM(htmlContent, settings);
   }
 
   /**
@@ -831,10 +914,87 @@ export class PrinterService {
    */
   static printViaDirectDOM(
     htmlContent: string, 
-    settings?: RestaurantSettings,
+    _settings?: RestaurantSettings,
     _canFallbackToIframe = false
   ): { success: boolean; restrictedInIframe?: boolean; error?: string } {
-    return PrinterService.printHtmlDocument(htmlContent, settings);
+    if (typeof window === 'undefined' || typeof document === 'undefined') {
+      return { success: false, error: 'Window or document not available' };
+    }
+    const isSandboxed = PrinterService.isSandboxed();
+    const activeEl = document.activeElement as HTMLElement | null;
+    document.body.classList.add('print-ready');
+    document.body.classList.add('pos-printing');
+
+    try {
+      let printRoot = document.getElementById('pos-print-root');
+      if (!printRoot) {
+        printRoot = document.createElement('div');
+        printRoot.id = 'pos-print-root';
+        printRoot.setAttribute('aria-hidden', 'true');
+        document.body.appendChild(printRoot);
+      }
+
+      // Extract style and body content cleanly for DOM injection
+      const styleMatch = htmlContent.match(/<style[^>]*>([\s\S]*?)<\/style>/i);
+      const bodyMatch = htmlContent.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+      const styleContent = styleMatch ? styleMatch[1] : '';
+      const bodyContent = bodyMatch ? bodyMatch[1] : htmlContent;
+
+      printRoot.innerHTML = styleContent 
+        ? `<style>${styleContent}</style>${bodyContent}`
+        : htmlContent;
+      printRoot.setAttribute('data-print-ready', 'true');
+
+      if (typeof window.focus === 'function') window.focus();
+
+      // Trigger browser printing (window.print is standard for thermal receipt printing and kiosk mode)
+      try {
+        window.print();
+      } catch (printErr: any) {
+        console.warn('[PrinterService] Direct window.print() was blocked or threw an exception:', printErr);
+        if (isSandboxed) {
+          const popupRes = PrinterService.printViaPopup(htmlContent);
+          if (popupRes.success) return popupRes;
+          return {
+            success: false,
+            restrictedInIframe: true,
+            error: 'Print blocked by iframe sandbox. Please open in a full browser tab for direct thermal printing.'
+          };
+        }
+        return { success: false, error: printErr?.message || 'Print execution failed' };
+      }
+
+      const cleanup = () => {
+        try {
+          PrinterService.restoreWindowFocus(activeEl);
+          if (printRoot) {
+            printRoot.removeAttribute('data-print-ready');
+          }
+        } catch (_) {}
+      };
+
+      if (typeof window !== 'undefined' && 'addEventListener' in window) {
+        window.addEventListener('afterprint', cleanup, { once: true });
+        // Generous safety timeout (60s) so the print spooler is NEVER cleared prematurely
+        setTimeout(cleanup, 60000);
+      } else {
+        cleanup();
+      }
+
+      return { success: true };
+    } catch (e: any) {
+      PrinterService.restoreWindowFocus(activeEl);
+      const isRestricted = e?.name === 'SecurityError' || 
+        String(e?.message || '').toLowerCase().includes('sandbox') ||
+        String(e?.message || '').toLowerCase().includes('allow-modals');
+
+      if (isRestricted) {
+        const popupRes = PrinterService.printViaPopup(htmlContent);
+        if (popupRes.success) return popupRes;
+      }
+
+      return { success: false, restrictedInIframe: isRestricted, error: e?.message || 'Direct DOM print failed' };
+    }
   }
 
   /**
@@ -912,6 +1072,8 @@ export class PrinterService {
       return { success: true };
     }
 
+    const html = PrinterService.generateThermalReceiptHTML(bill, items, settings);
+
     // Direct Hardware USB/Serial ESC/POS printing (0-Click, 100% bypasses Chrome preview dialog)
     if (PrinterConnectionService.isDirectHardwareReady()) {
       try {
@@ -920,8 +1082,12 @@ export class PrinterService {
           if (res.success) {
             console.log(`[POS Direct Hardware] Dispatched ${escposBuffer.length} bytes directly to thermal printer (zero preview dialog).`);
           } else {
-            console.warn('[POS Direct Hardware] Transfer notice:', res.error);
+            console.warn('[POS Direct Hardware] Hardware direct dispatch notice, triggering fallback thermal print:', res.error);
+            PrinterService.printHtmlDocument(html, settings);
           }
+        }).catch((sendErr) => {
+          console.warn('[POS Direct Hardware] Exception in sendRawBytes, triggering fallback print:', sendErr);
+          PrinterService.printHtmlDocument(html, settings);
         });
 
         const durationMs = Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - startTime);
@@ -945,8 +1111,6 @@ export class PrinterService {
         console.warn('[POS Direct Hardware] Failed to generate raw ESC/POS buffer, falling back to browser print:', escPosErr);
       }
     }
-
-    const html = PrinterService.generateThermalReceiptHTML(bill, items, settings);
     
     // Direct Browser Print for Chrome Kiosk Printing (--kiosk-printing)
     // Sends the print job directly to the Windows default thermal printer without dialog or preview
@@ -1030,6 +1194,8 @@ export class PrinterService {
       return { success: true };
     }
 
+    const html = PrinterService.generateKotSlipHTML(kot, items);
+
     // Direct Hardware USB/Serial ESC/POS printing for KOT (zero preview dialog)
     if (PrinterConnectionService.isDirectHardwareReady()) {
       try {
@@ -1037,7 +1203,13 @@ export class PrinterService {
         PrinterConnectionService.sendRawBytes(kotBuffer).then((res) => {
           if (res.success) {
             console.log(`[POS Direct Hardware] Sent raw KOT ESC/POS buffer directly to kitchen printer.`);
+          } else {
+            console.warn('[POS Direct Hardware] KOT hardware send notice, triggering fallback thermal print:', res.error);
+            PrinterService.printHtmlDocument(html);
           }
+        }).catch((err) => {
+          console.warn('[POS Direct Hardware] KOT send error, triggering fallback print:', err);
+          PrinterService.printHtmlDocument(html);
         });
 
         const durationMs = Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - startTime);
@@ -1056,11 +1228,9 @@ export class PrinterService {
 
         return { success: true };
       } catch (kotErr) {
-        console.warn('[POS Direct Hardware] Error sending raw KOT buffer:', kotErr);
+        console.warn('[POS Direct Hardware] Error sending raw KOT buffer, falling back to browser print:', kotErr);
       }
     }
-
-    const html = PrinterService.generateKotSlipHTML(kot, items);
 
     // Direct Browser Print for Chrome Kiosk Printing (--kiosk-printing)
     // Sends the print job directly to the Windows default thermal printer without dialog or preview
@@ -1082,6 +1252,74 @@ export class PrinterService {
       isMockMode: false,
       userId: kot.waiterId || kot.createdBy,
       userName: kot.waiterName
+    });
+
+    return result;
+  }
+
+  /**
+   * Directly prints a consolidated KOT Summary Slip for multiple completed KOTs with diagnostic logging.
+   */
+  static printKotSummarySlip(
+    kotsWithItems: { kot: Kot; items: KotItem[] }[],
+    settings?: RestaurantSettings,
+    managerName?: string,
+    forceHardware = true
+  ): { success: boolean; restrictedInIframe?: boolean; error?: string } {
+    const startTime = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    const isMock = !forceHardware && PrinterService.isMockPrintMode();
+    const referenceNumber = `KOT-SUM-${kotsWithItems.length}`;
+
+    // Calculate aggregated items
+    const itemMap = new Map<string, { itemName: string; itemNameTamil?: string; quantity: number }>();
+    kotsWithItems.forEach(({ kot, items }) => {
+      const effectiveItems = (items && items.length > 0) ? items : (kot.items || []);
+      effectiveItems.forEach((itm) => {
+        const key = itm.itemName.trim().toLowerCase();
+        if (!itemMap.has(key)) {
+          itemMap.set(key, { itemName: itm.itemName, itemNameTamil: itm.itemNameTamil, quantity: 0 });
+        }
+        itemMap.get(key)!.quantity += itm.quantity;
+      });
+    });
+    const consolidatedList = Array.from(itemMap.values());
+    const totalItemsCount = consolidatedList.reduce((acc, i) => acc + i.quantity, 0);
+
+    if (isMock) {
+      console.log(`[POS Dev Mode] Simulated instant print for KOT Summary Slip (${kotsWithItems.length} KOTs)`);
+      PrintDiagnosticsService.recordPrintJob({
+        jobType: 'KOT',
+        referenceNumber,
+        status: 'SUCCESS',
+        method: 'MOCK',
+        paperWidth: settings?.paperWidth || '80mm',
+        itemCount: totalItemsCount,
+        durationMs: 0,
+        isMockMode: true,
+        userId: 'manager',
+        userName: managerName || 'Manager'
+      });
+      return { success: true };
+    }
+
+    const html = PrinterService.generateKotSummarySlipHTML(kotsWithItems, settings, managerName);
+    const result = PrinterService.printHtmlDocument(html, settings);
+    const printMethod: PrintMethod = 'DIRECT_DOM';
+    const durationMs = Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - startTime);
+    const status = result.success ? 'SUCCESS' : 'FAILURE';
+
+    PrintDiagnosticsService.recordPrintJob({
+      jobType: 'KOT',
+      referenceNumber,
+      status,
+      method: printMethod,
+      paperWidth: settings?.paperWidth || '80mm',
+      itemCount: totalItemsCount,
+      durationMs,
+      errorMessage: result.error,
+      isMockMode: false,
+      userId: 'manager',
+      userName: managerName || 'Manager'
     });
 
     return result;

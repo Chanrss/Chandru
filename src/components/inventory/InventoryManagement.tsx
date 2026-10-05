@@ -1279,11 +1279,6 @@ export const InventoryManagement: React.FC = () => {
                               <h3 className="font-black text-sm text-slate-900 mt-1 truncate">
                                 {item.itemName}
                               </h3>
-                              {item.itemNameTamil && (
-                                <p className="text-[11px] text-slate-500 truncate">
-                                  {item.itemNameTamil}
-                                </p>
-                              )}
                             </div>
                           </div>
 
@@ -1430,9 +1425,6 @@ export const InventoryManagement: React.FC = () => {
                                   </span>
                                   <div>
                                     <span className="font-bold text-slate-900">{item.itemName}</span>
-                                    {item.itemNameTamil && (
-                                      <span className="text-[11px] text-slate-400 ml-1.5">{item.itemNameTamil}</span>
-                                    )}
                                   </div>
                                 </div>
                               </td>
@@ -1636,11 +1628,6 @@ export const InventoryManagement: React.FC = () => {
                         <h2 className="font-black text-lg sm:text-xl text-slate-900 uppercase mt-0.5 tracking-tight">
                           {activeItem.itemName}
                         </h2>
-                        {activeItem.itemNameTamil && (
-                          <p className="text-xs text-slate-500 font-medium">
-                            {activeItem.itemNameTamil}
-                          </p>
-                        )}
                       </div>
                     </div>
 

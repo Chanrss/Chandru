@@ -88,7 +88,7 @@ const AppContent: React.FC = () => {
           watermarkOpacity: data.watermarkOpacity !== undefined ? data.watermarkOpacity : 0.12,
           compactMode: data.compactMode !== undefined ? Boolean(data.compactMode) : true,
           autoPrintOnSave: data.autoPrintOnSave !== undefined ? data.autoPrintOnSave : true,
-          skipPrintPreview: data.skipPrintPreview !== undefined ? Boolean(data.skipPrintPreview) : false,
+          skipPrintPreview: data.skipPrintPreview !== undefined ? Boolean(data.skipPrintPreview) : true,
         });
       } else {
         setSettings({
@@ -116,7 +116,7 @@ const AppContent: React.FC = () => {
           watermarkOpacity: 0.12,
           compactMode: true,
           autoPrintOnSave: true,
-          skipPrintPreview: false
+          skipPrintPreview: true
         });
       }
     }, (error) => {
@@ -145,7 +145,7 @@ const AppContent: React.FC = () => {
         watermarkOpacity: 0.12,
         compactMode: true,
         autoPrintOnSave: true,
-        skipPrintPreview: false
+        skipPrintPreview: true
       });
     });
 

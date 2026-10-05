@@ -35,6 +35,23 @@ export interface RawEscPosSendResult {
 
 export class EscPosService {
   /**
+   * Safely appends ASCII characters to the ESC/POS byte buffer.
+   * Filters out non-ASCII or multi-byte Unicode values so that their lower 8 bits
+   * never accidentally emit ESC (0x1B), GS (0x1D), or null bytes that could freeze the printer.
+   */
+  static pushSafeAscii(parts: number[], text: string): void {
+    for (let i = 0; i < text.length; i++) {
+      const code = text.charCodeAt(i);
+      if ((code >= 32 && code <= 126) || code === 10 || code === 13 || code === 9) {
+        parts.push(code);
+      } else if (code > 127) {
+        // Safe printable fallback space to maintain column layout without triggering printer command resets
+        parts.push(0x20);
+      }
+    }
+  }
+
+  /**
    * Generates a complete, production-ready binary ESC/POS command buffer
    * for a customer receipt. Sends raw bytes straight to the thermal printhead
    * and auto-cutter, completely bypassing Chrome's print preview dialog.
@@ -49,11 +66,7 @@ export class EscPosService {
     const parts: number[] = [];
 
     // Helper: Push raw ASCII string bytes
-    const pushAscii = (text: string) => {
-      for (let i = 0; i < text.length; i++) {
-        parts.push(text.charCodeAt(i) & 0xff);
-      }
-    };
+    const pushAscii = (text: string) => EscPosService.pushSafeAscii(parts, text);
 
     // Helper: Align Left and Right text within paper width
     const alignLR = (left: string, right: string): string => {
@@ -322,9 +335,7 @@ export class EscPosService {
       0x1b, 0x45, 0x01,             // Bold ON
       0x1d, 0x21, 0x01              // Double-height
     ];
-    const pushAscii = (text: string) => {
-      for (let i = 0; i < text.length; i++) parts.push(text.charCodeAt(i) & 0xff);
-    };
+    const pushAscii = (text: string) => EscPosService.pushSafeAscii(parts, text);
 
     pushAscii(`${modelName}\nBARCODE & QR CODE TEST\n`);
     parts.push(0x1d, 0x21, 0x00, 0x1b, 0x45, 0x00);
@@ -346,11 +357,7 @@ export class EscPosService {
     const parts: number[] = [];
     const width = 48; // 80mm standard
 
-    const pushAscii = (text: string) => {
-      for (let i = 0; i < text.length; i++) {
-        parts.push(text.charCodeAt(i) & 0xff);
-      }
-    };
+    const pushAscii = (text: string) => EscPosService.pushSafeAscii(parts, text);
 
     const alignLR = (left: string, right: string): string => {
       const available = width - left.length - right.length;
@@ -420,11 +427,7 @@ export class EscPosService {
     const parts: number[] = [];
 
     // Helper: Push raw ASCII string bytes
-    const pushAscii = (text: string) => {
-      for (let i = 0; i < text.length; i++) {
-        parts.push(text.charCodeAt(i) & 0xff);
-      }
-    };
+    const pushAscii = (text: string) => EscPosService.pushSafeAscii(parts, text);
 
     // 1. ESC @ (0x1B 0x40) - Initialize printer / clear line buffer
     parts.push(0x1b, 0x40);
